@@ -1,7 +1,7 @@
 // Service entry of the `ssh-host` module (bundled to services/ssh-host.mjs).
 import { serve } from "../rpc.mjs";
 import { HOSTS_KEY, checkRemoteFolder, createSshHostEnvironment } from "../sshHost.mjs";
-import { chooseHost, normalizeHosts, remoteFolderFor } from "../hosts.mjs";
+import { chooseHost, normalizeHosts, remoteFolderFor, subagentServerLabels } from "../hosts.mjs";
 
 let environment = null;
 let host = null;
@@ -22,6 +22,8 @@ serve({
     "canvastty.environment.wrap": (params) => ready().wrap(params),
     "canvastty.environment.release": (params) => ready().release(params),
     "canvastty.environment.describe": (params) => ready().describe(params),
+    // Which servers an orchestrator may name for a subagent: labels only (CanvasTTY with spawn_agent environments).
+    "canvastty.environment.choices": async ({ field }) => ({ choices: field === "host" ? subagentServerLabels(normalizeHosts(await readHosts())) : [] }),
     // From the settings page: is this server reachable, and (optionally) is a folder mapped and present there?
     async check({ label, folder }) {
       const hosts = normalizeHosts(await readHosts());

@@ -4,7 +4,8 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import {
-  chooseHost, destinationArgs, hostInvalidReason, normalizeHosts, remoteArgs, remoteCommandLine, remoteFolderFor, shellQuote, sshLaunchArgs
+  chooseHost, destinationArgs, hostInvalidReason, normalizeHosts, remoteArgs, remoteCommandLine, remoteFolderFor, shellQuote, sshLaunchArgs,
+  subagentServerLabels
 } from "../src/hosts.mjs";
 import { fakeSsh, temp } from "./helpers.mjs";
 
@@ -92,4 +93,24 @@ test("through a shell that joins ssh words like a server does, the agent line ru
   });
   assert.equal(output, "a b|it's|$(touch pwned)|`touch pwned2`|");
   assert.ok(!existsSync(join(folder, "pwned")) && !existsSync(join(folder, "pwned2")));
+});
+
+test("subagents see servers by the person's labels only; a label that reads like an address is left out", () => {
+  const hosts = normalizeHosts([
+    { label: "Build box", sshHost: "build-box", sshUser: "deploy", workspaces: [] },
+    { label: "gpu", sshHost: "10.0.0.7", workspaces: [] },
+    { label: "build-box", sshHost: "other-alias", workspaces: [] },
+    { label: "Deploy", sshHost: "third", workspaces: [] },
+    { label: "root@db", sshHost: "db", workspaces: [] },
+    { label: "10.0.0.8", sshHost: "eight", workspaces: [] },
+    { label: "ci.example.org", sshHost: "ci", workspaces: [] },
+    { label: "edge:2222", sshHost: "edge", workspaces: [] },
+    { label: "v2 staging", sshHost: "staging", workspaces: [] }
+  ]);
+  assert.deepEqual(subagentServerLabels(hosts), ["Build box", "gpu", "v2 staging"]);
+  const labels = JSON.stringify(subagentServerLabels(hosts));
+  for (const address of ["10.0.0.7", "deploy", "other-alias", "third", "db", "edge", "build-box", "example"]) {
+    assert.equal(labels.toLowerCase().includes(address.toLowerCase()), false, address);
+  }
+  assert.deepEqual(subagentServerLabels([]), []);
 });

@@ -1,55 +1,15 @@
 // The bundled service files as CanvasTTY runs them: a child process speaking JSON-RPC lines, with the host's calls
 // (storage, sessions, badges) answered by the test. Also checks the manifest's file integrity.
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { createInterface } from "node:readline";
 import test from "node:test";
-import { fakeSsh, git, repo, temp } from "./helpers.mjs";
+import { fakeSsh, git, repo, startService, temp } from "./helpers.mjs";
 
 const root = new URL("../", import.meta.url).pathname;
 const PLUGIN = "canvastty-environments";
-
-function startService(t, name, { dataDir, env = {}, host = {} }) {
-  const child = spawn(process.execPath, [join(root, "services", `${name}.mjs`)], { cwd: root, env: { ...process.env, ...env }, stdio: ["pipe", "pipe", "inherit"] });
-  t.after(() => child.kill());
-  const waiting = new Map();
-  const hostCalls = [];
-  let nextId = 1;
-  const write = (message) => child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", ...message })}\n`);
-  createInterface({ input: child.stdout }).on("line", async (line) => {
-    const message = JSON.parse(line);
-    if (message.method && message.id !== undefined) {
-      hostCalls.push({ method: message.method, params: message.params });
-      try {
-        const handler = host[message.method];
-        if (!handler) throw new Error(`host: ${message.method} not allowed`);
-        write({ id: message.id, result: (await handler(message.params)) ?? null });
-      } catch (error) {
-        write({ id: message.id, error: { code: -32000, message: error.message } });
-      }
-      return;
-    }
-    if (message.method) return;
-    const waiter = waiting.get(message.id);
-    waiting.delete(message.id);
-    if (message.error) waiter?.reject(new Error(message.error.message));
-    else waiter?.resolve(message.result);
-  });
-  write({ method: "canvastty.initialize", params: { apiVersion: 2, pluginId: PLUGIN, serviceId: name, dataDir, locale: "en", hostVersion: "test" } });
-  return {
-    hostCalls,
-    notify: (method, params) => write({ method, params }),
-    request: (method, params) => new Promise((resolve, reject) => {
-      const id = `t${nextId++}`;
-      waiting.set(id, { resolve, reject });
-      write({ id, method, params });
-    })
-  };
-}
 
 test("the manifest's coreFiles and module files match the package bytes (what the installer checks)", () => {
   const manifest = JSON.parse(readFileSync(join(root, "canvastty.plugin.json"), "utf8"));
@@ -77,6 +37,18 @@ test("each environment kind declares honestly what of CanvasTTY's protection it 
     // One non-recursive bind mount of the project (or its copy) at /workspace, checked after create and from inside.
     container: { isolated: true, confines: true },
     "remote-container": { isolated: true, confines: true }
+  });
+});
+
+test("servers and containers on servers may be chosen for subagents, by server label, capped per server; nothing local", () => {
+  const manifest = JSON.parse(readFileSync(join(root, "canvastty.plugin.json"), "utf8"));
+  const subagents = Object.fromEntries(manifest.services.flatMap((service) => service.environments ?? []).map((kind) => [kind.kind, kind.subagents]));
+  assert.deepEqual(subagents, {
+    worktree: undefined,
+    "ssh-host": { maxParallel: 2, fields: ["host"], capBy: "host" },
+    container: undefined,
+    // Network, image and workspace keep their defaults (no network, the image from Settings, a copy).
+    "remote-container": { maxParallel: 1, fields: ["host"], capBy: "host" }
   });
 });
 
@@ -197,4 +169,20 @@ test("container services over JSON-RPC: refusals name what to fix; the capsule t
   const applied = await results.request("canvastty.cards.invoke", { actionId: "capsule-apply", sessionId: "c1", session: card });
   assert.equal(applied.tone, "error");
   assert.match(applied.message, /no capsule check yet/u);
+});
+
+test("ssh-host and remote-container answer the servers subagents may name: labels only, from plugin storage", async (t) => {
+  const hosts = [
+    { label: "Build box", sshHost: "build-box", sshUser: "deploy", workspaces: [] },
+    { label: "10.1.2.3", sshHost: "ten", workspaces: [] },
+    { label: "gpu", sshHost: "gpu-7.lab.example", sshPort: 2222, workspaces: [] }
+  ];
+  const storage = { "storage.get": ({ key }) => (key === "hosts" ? hosts : null) };
+  for (const name of ["ssh-host", "remote-container"]) {
+    const service = startService(t, name, { dataDir: await temp(t, "data"), host: storage });
+    const answer = await service.request("canvastty.environment.choices", { kind: name, field: "host" });
+    assert.deepEqual(answer, { choices: ["Build box", "gpu"] }, name);
+    for (const secret of ["build-box", "deploy", "10.1.2.3", "gpu-7", "2222"]) assert.equal(JSON.stringify(answer).includes(secret), false, `${name}: ${secret}`);
+    assert.deepEqual(await service.request("canvastty.environment.choices", { kind: name, field: "image" }), { choices: [] });
+  }
 });

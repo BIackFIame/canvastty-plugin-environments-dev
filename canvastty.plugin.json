@@ -12,13 +12,13 @@
   "coreFiles": [
     {
       "path": "README.md",
-      "bytes": 7255,
-      "sha256": "6aec235f1a95c47cb528d671c0e6f85fb02cc0b1f0e8fbc3d51ccdba3095a05d"
+      "bytes": 8264,
+      "sha256": "8730ea0bf14374def11272b65f5f04ae4b623e3d276c500ffdab5076a87731f5"
     },
     {
       "path": "README.ru.md",
-      "bytes": 11028,
-      "sha256": "127c9456f2696e0ce03c262cd2f72e89af35facd3f39a07aaaa9c187154dd374"
+      "bytes": 12841,
+      "sha256": "a31ed1bba12585c5a60b90edb4df6c4c75e761621e4c983d43f8f1da156ecda4"
     },
     {
       "path": "settings/hosts.html",
@@ -65,8 +65,8 @@
       "files": [
         {
           "path": "services/ssh-host.mjs",
-          "bytes": 20076,
-          "sha256": "cd9fd413f5cabb6c5aab80282fdaec7cb4c7b9f835fd5a75caebba311b7146dd"
+          "bytes": 20703,
+          "sha256": "b1988ba456dc376cd1c2b386828afaa179f90998f115df432277a8ca5a58c285"
         }
       ]
     },
@@ -99,8 +99,8 @@
       "files": [
         {
           "path": "services/remote-container.mjs",
-          "bytes": 50367,
-          "sha256": "ee56c25171d11102db96550ac2fe91466bf25a242b61465ab2c736cfd6df4fd3"
+          "bytes": 51050,
+          "sha256": "8bbbe4ed43226edaede2de67a2b739cb8894a2b4f6e78f6419d53086a69e0ed2"
         }
       ]
     },
@@ -173,6 +173,13 @@
           ],
           "keeps": {
             "isolated": true
+          },
+          "subagents": {
+            "maxParallel": 2,
+            "fields": [
+              "host"
+            ],
+            "capBy": "host"
           }
         }
       ]
@@ -278,6 +285,13 @@
           "keeps": {
             "isolated": true,
             "confines": true
+          },
+          "subagents": {
+            "maxParallel": 1,
+            "fields": [
+              "host"
+            ],
+            "capBy": "host"
           }
         }
       ]

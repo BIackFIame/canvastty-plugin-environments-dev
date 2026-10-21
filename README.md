@@ -33,6 +33,12 @@ carries the size and SHA-256 of every file.
   Docker config folder (no credential helpers or contexts from `~/.docker`). They never pull images or start Docker
   Desktop or a Podman machine.
 
+## Subagents on servers
+
+With a CanvasTTY core that has spawn_agent environments, an orchestrator may start a subagent on one of your servers (SSH server, or Container on a server). It only names a server by the label you gave it in Settings, and sees no address, user, port or folder. Labels that read like an address (an ssh host or user, `user@host`, a dotted host name or IP address, `host:port`, a path) are not offered to agents; such a server stays yours, so give it a plain name to offer it. At most two subagents run on one server over SSH at once, and one container per server. Everything else (network, image, workspace) keeps its default: no network, the image from Settings, a copy of the project. These cards run in normal and CanvasTTY's local hooks and base protection do not reach them, as when you start them yourself.
+
+For CanvasTTY 1.8.x, use the `-18` build of this plugin: its manifest leaves out the `subagents` declaration that older cores do not accept, and servers stay yours only.
+
 ## Limits of this first version
 
 - Agent cards on a server run the same CLI by name from the server's login shell, without CanvasTTY's local bridges

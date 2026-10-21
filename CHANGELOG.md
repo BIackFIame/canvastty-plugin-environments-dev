@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Subagents on servers
+
+- ssh-host and remote-container declare `subagents` with `host` settable and the cap per server (`capBy: "host"`; two subagents per server over SSH, one container per server). Needs a core with spawn_agent environments and per-server caps; the `-18` build leaves the declaration out for CanvasTTY 1.8.x.
+- Both services answer `canvastty.environment.choices` with the configured servers' labels only; a label that reads like an address is left out.
+
 Requires the CanvasTTY core with plugin API v2 and the environment `keeps` declaration: the upcoming release after 1.7.0.
 
 ### What you'll notice

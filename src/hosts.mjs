@@ -59,6 +59,18 @@ export function normalizeHosts(value) {
   return hosts;
 }
 
+/**
+ * The servers an orchestrator may name for a subagent (CanvasTTY's `canvastty.environment.choices`): the labels the
+ * person gave them, in their order. A label that reads like an address (an ssh host or user of any configured server,
+ * user@host, a dotted host name or IP address, host:port, a path) is left out, so only names reach agents; such a server
+ * stays the person's.
+ */
+export function subagentServerLabels(hosts) {
+  const addresses = new Set(hosts.flatMap((host) => [host.sshHost, host.sshUser].filter(Boolean).map((value) => value.toLowerCase())));
+  return hosts.map((host) => host.label).filter((label) => !addresses.has(label.toLowerCase())
+    && !/[@:/\\]/u.test(label) && !/^[a-z0-9-]+(?:\.[a-z0-9-]+)+$/iu.test(label));
+}
+
 /** The host the launcher's "Host" field names (case-insensitive label or ssh alias); empty picks the first. */
 export function chooseHost(hosts, wanted) {
   const name = typeof wanted === "string" ? wanted.trim().toLowerCase() : "";

@@ -1,9 +1,10 @@
-import { execFile, execFileSync } from "node:child_process";
+import { execFile, execFileSync, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { rmSync } from "node:fs";
 import { chmod, mkdtemp, realpath, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createInterface } from "node:readline";
 
 export const git = (cwd, ...args) => execFileSync("git", ["-C", cwd, ...args], {
   encoding: "utf8", env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@example.invalid", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@example.invalid" }
@@ -119,4 +120,49 @@ export function fakeEngine({ imageId = "a".repeat(64), holdFails = null, createD
     });
   }
   return { engine, run, attach, detect: async () => engine, containers, calls };
+}
+
+const pluginRoot = new URL("../", import.meta.url).pathname;
+
+/** A bundled service file run as CanvasTTY runs it: a child process speaking JSON-RPC lines; `host` answers its calls. */
+export function startService(t, name, { dataDir, env = {}, host = {} }) {
+  const root = pluginRoot;
+  const PLUGIN = "canvastty-environments";
+  const child = spawn(process.execPath, [join(root, "services", `${name}.mjs`)], { cwd: root, env: { ...process.env, ...env }, stdio: ["pipe", "pipe", "inherit"] });
+  t.after(() => child.kill());
+  // A host call after the test ended (the core releasing its cards on shutdown) finds the service gone.
+  child.stdin.on("error", () => undefined);
+  const waiting = new Map();
+  const hostCalls = [];
+  let nextId = 1;
+  const write = (message) => child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", ...message })}\n`);
+  createInterface({ input: child.stdout }).on("line", async (line) => {
+    const message = JSON.parse(line);
+    if (message.method && message.id !== undefined) {
+      hostCalls.push({ method: message.method, params: message.params });
+      try {
+        const handler = host[message.method];
+        if (!handler) throw new Error(`host: ${message.method} not allowed`);
+        write({ id: message.id, result: (await handler(message.params)) ?? null });
+      } catch (error) {
+        write({ id: message.id, error: { code: -32000, message: error.message } });
+      }
+      return;
+    }
+    if (message.method) return;
+    const waiter = waiting.get(message.id);
+    waiting.delete(message.id);
+    if (message.error) waiter?.reject(new Error(message.error.message));
+    else waiter?.resolve(message.result);
+  });
+  write({ method: "canvastty.initialize", params: { apiVersion: 2, pluginId: PLUGIN, serviceId: name, dataDir, locale: "en", hostVersion: "test" } });
+  return {
+    hostCalls,
+    notify: (method, params) => write({ method, params }),
+    request: (method, params) => new Promise((resolve, reject) => {
+      const id = `t${nextId++}`;
+      waiting.set(id, { resolve, reject });
+      write({ id, method, params });
+    })
+  };
 }

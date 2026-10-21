@@ -262,6 +262,10 @@ function normalizeHosts(value) {
   }
   return hosts;
 }
+function subagentServerLabels(hosts) {
+  const addresses = new Set(hosts.flatMap((host2) => [host2.sshHost, host2.sshUser].filter(Boolean).map((value) => value.toLowerCase())));
+  return hosts.map((host2) => host2.label).filter((label) => !addresses.has(label.toLowerCase()) && !/[@:/\\]/u.test(label) && !/^[a-z0-9-]+(?:\.[a-z0-9-]+)+$/iu.test(label));
+}
 function chooseHost(hosts, wanted) {
   const name = typeof wanted === "string" ? wanted.trim().toLowerCase() : "";
   if (!name) return hosts[0] ?? null;
@@ -456,6 +460,8 @@ serve({
     "canvastty.environment.wrap": (params) => ready().wrap(params),
     "canvastty.environment.release": (params) => ready().release(params),
     "canvastty.environment.describe": (params) => ready().describe(params),
+    // Which servers an orchestrator may name for a subagent: labels only (CanvasTTY with spawn_agent environments).
+    "canvastty.environment.choices": async ({ field }) => ({ choices: field === "host" ? subagentServerLabels(normalizeHosts(await readHosts())) : [] }),
     // From the settings page: is this server reachable, and (optionally) is a folder mapped and present there?
     async check({ label, folder }) {
       const hosts = normalizeHosts(await readHosts());

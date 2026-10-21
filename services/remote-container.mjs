@@ -536,6 +536,10 @@ function normalizeHosts(value) {
   }
   return hosts;
 }
+function subagentServerLabels(hosts) {
+  const addresses = new Set(hosts.flatMap((host) => [host.sshHost, host.sshUser].filter(Boolean).map((value) => value.toLowerCase())));
+  return hosts.map((host) => host.label).filter((label) => !addresses.has(label.toLowerCase()) && !/[@:/\\]/u.test(label) && !/^[a-z0-9-]+(?:\.[a-z0-9-]+)+$/iu.test(label));
+}
 function chooseHost(hosts, wanted) {
   const name = typeof wanted === "string" ? wanted.trim().toLowerCase() : "";
   if (!name) return hosts[0] ?? null;
@@ -834,7 +838,7 @@ function sections(text) {
   }
   return result;
 }
-function createRemoteContainerEnvironment({ dataDir, readSettings, readHosts, transportFor = (host) => sshTransport(host) }) {
+function createRemoteContainerEnvironment({ dataDir, readSettings, readHosts: readHosts2, transportFor = (host) => sshTransport(host) }) {
   const ops = /* @__PURE__ */ new Map();
   const preparing = /* @__PURE__ */ new Set();
   const exclusive = (sessionId, run) => {
@@ -898,7 +902,7 @@ function createRemoteContainerEnvironment({ dataDir, readSettings, readHosts, tr
       return ms;
     };
     const settings = normalizeContainerSettings(await readSettings());
-    const hosts = normalizeHosts(await readHosts());
+    const hosts = normalizeHosts(await readHosts2());
     if (!hosts.length) return { refuse: { reason: "No server is configured yet: add one in the plugin's Settings." } };
     const host = chooseHost(hosts, options.host);
     if (!host) return { refuse: { reason: `No configured server is called ${String(options.host).slice(0, 40)}.` } };
@@ -1017,6 +1021,7 @@ function createRemoteContainerEnvironment({ dataDir, readSettings, readHosts, tr
 
 // src/services/remote-container.mjs
 var environment = null;
+var readHosts = async () => [];
 var ready = () => {
   if (!environment) throw new Error("The remote-container service is starting; try again.");
   return environment;
@@ -1024,13 +1029,16 @@ var ready = () => {
 serve({
   onInitialize: ({ dataDir }, host) => {
     const read = (key) => async () => await host.callHost("storage.get", { key }) ?? null;
-    environment = createRemoteContainerEnvironment({ dataDir, readSettings: read(CONTAINER_SETTINGS_KEY), readHosts: async () => await read(HOSTS_KEY)() ?? [] });
+    readHosts = async () => await read(HOSTS_KEY)() ?? [];
+    environment = createRemoteContainerEnvironment({ dataDir, readSettings: read(CONTAINER_SETTINGS_KEY), readHosts });
   },
   methods: {
     "canvastty.environment.prepare": (params) => ready().prepare(params),
     "canvastty.environment.resume": (params) => ready().resume(params),
     "canvastty.environment.wrap": (params) => ready().wrap(params),
     "canvastty.environment.release": (params) => ready().release(params),
-    "canvastty.environment.describe": (params) => ready().describe(params)
+    "canvastty.environment.describe": (params) => ready().describe(params),
+    // Which servers an orchestrator may name for a subagent: labels only (CanvasTTY with spawn_agent environments).
+    "canvastty.environment.choices": async ({ field }) => ({ choices: field === "host" ? subagentServerLabels(normalizeHosts(await readHosts())) : [] })
   }
 });
